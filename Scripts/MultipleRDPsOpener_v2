@@ -1,0 +1,102 @@
+# ======================
+# Funkcja: Get-RDPCredentials
+# Opis: Wyświetla okno do podania poświadczeń użytkownika (login + hasło).
+# ======================
+function Get-RDPCredentials {
+    Write-Host "Pobieranie poświadczeń użytkownika..."
+    return Get-Credential
+}
+
+# ======================
+# Funkcja: Convert-SecureStringToPlainText
+# Opis: Zamienia SecureString (hasło) na tekst jawny w pamięci (tymczasowo).
+# Parametry: $secureString – obiekt typu SecureString
+# ======================
+function Convert-SecureStringToPlainText($secureString) {
+    $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureString)
+    try {
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+    } finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    }
+}
+
+# ======================
+# Funkcja: Add-RDPCredentialsToCredentialManager
+# Opis: Dodaje poświadczenia użytkownika do Credential Managera dla każdego hosta.
+# Parametry:
+#   $servers – lista hostów (FQDN lub IP)
+#   $username – nazwa użytkownika
+#   $password – hasło w formie tekstowej
+# ======================
+function Add-RDPCredentialsToCredentialManager($servers, $username, $password) {
+    foreach ($s in $servers) {
+        cmd.exe /c "cmdkey /add:$s /user:$username /pass:$password" | Out-Null
+    }
+}
+
+# ======================
+# Funkcja: Start-RDPSessions
+# Opis: Uruchamia sesje RDP (mstsc) dla każdego hosta z listy.
+# Parametry: $servers – lista hostów
+# ======================
+function Start-RDPSessions($servers) {
+    foreach ($s in $servers) {
+        Start-Process "mstsc.exe" -ArgumentList "/v:$s"
+    }
+}
+
+# ======================
+# Funkcja: Remove-RDPCredentialsFromCredentialManager
+# Opis: Usuwa poświadczenia z Credential Managera dla każdego hosta.
+# Parametry: $servers – lista hostów
+# ======================
+function Remove-RDPCredentialsFromCredentialManager($servers) {
+    foreach ($s in $servers) {
+        cmd.exe /c "cmdkey /delete:$s" | Out-Null
+    }
+    Write-Host "Poświadczenia usunięte."
+}
+
+# ======================
+# Funkcja: Run-RDPSession
+# Opis: Główna funkcja uruchamiająca cały proces:
+#   1. Pobiera poświadczenia
+#   2. Dodaje je do Credential Managera
+#   3. Uruchamia sesje RDP
+#   4. Pyta o usunięcie poświadczeń
+# ======================
+function Run-RDPSession {
+    # Lista hostów docelowych
+    $servers = @(
+        "server1.domain.local",
+        "server2.domain.local",
+        "10.0.0.5"
+    )
+
+    # Pobierz dane logowania
+    $cred = Get-RDPCredentials
+
+    # Zamień hasło na tekst jawny (tymczasowo)
+    $plainPass = Convert-SecureStringToPlainText $cred.Password
+
+    # Dodaj poświadczenia do Credential Managera
+    Add-RDPCredentialsToCredentialManager -servers $servers -username $cred.UserName -password $plainPass
+
+    # Uruchom sesje RDP
+    Start-RDPSessions -servers $servers
+
+    # Informacja dla użytkownika
+    Write-Host ""
+    Write-Host "Wszystkie okna RDP uruchomione."
+    Write-Host "Naciśnij Enter, żeby usunąć zapisane poświadczenia z Credential Manager (zalecane), lub Ctrl+C żeby zostawić."
+    Read-Host -Prompt "Usuń poświadczenia i zakończ?"
+
+    # Usuń poświadczenia
+    Remove-RDPCredentialsFromCredentialManager -servers $servers
+}
+
+# ======================
+# Uruchomienie głównej funkcji
+# ======================
+Run-RDPSession
